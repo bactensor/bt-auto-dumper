@@ -19,6 +19,7 @@ dynamic = [
     "version",
 ]
 dependencies = [
+    "requests",
 ]
 
 [project.urls]
