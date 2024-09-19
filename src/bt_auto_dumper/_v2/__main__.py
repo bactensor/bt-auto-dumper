@@ -1,39 +1,39 @@
 import argparse
+import json
 import pathlib
 import subprocess
+import time
 import zipfile
 
+import bittensor as bt
 import requests
 
 
 def main(apiver: str | None = None):
     apiver = apiver or pathlib.Path(__file__).parent.name
     parser = argparse.ArgumentParser(description=f"BT Auto Dumper CLI {apiver}")
+    parser.add_argument("--note", help="Comment or note for the operation", type=str, default="")
+    parser.add_argument("--walletname", help="Wallet Name", type=str, required=True)
+    parser.add_argument("--wallethotkey", help="Wallet Hotkey", type=str, required=True)
     parser.add_argument("subnet_identifier", help="Subnet Identifier", type=str)
     parser.add_argument("autovalidator_address", help="AutoValidator Address", type=str)
-    parser.add_argument("api_key", help="API Key", type=str)
 
     args = parser.parse_args()
 
-    dump_and_upload(args.subnet_identifier, args.autovalidator_address, args.api_key)
+    dump_and_upload(args.walletname, args.wallethotkey, args.subnet_identifier, args.autovalidator_address, args.note)
 
 
-def dump_and_upload(subnet_identifier: str, autovalidator_address: str, api_key: str):
+def dump_and_upload(walletname, wallethotkey, subnet_identifier: str, autovalidator_address: str, note: str):
     subnets = {
-        "compute_horde": {
-            "12": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
-            "t147": ["echo 'Testnet Command 1'", "echo 'Testnet Command 2'"],
-        }
+        "compute_horde":  ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
+        "omron":  ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
     }
-
-    if subnet_identifier in subnets:
-        commands = subnets[subnet_identifier]
-    else:
-        commands = {}
-        for subnet_data in subnets.values():
-            if subnet_identifier in subnet_data:
-                commands[subnet_identifier] = subnet_data[subnet_identifier]
-                break
+    wallet = bt.wallet(name=walletname, hotkey=wallethotkey)
+    commands = {}
+    for subnet_id, command in subnets.items():
+        if subnet_id == subnet_identifier:
+            commands[subnet_id] = command
+            break
 
     if not commands:
         print(f"Subnet identifier {subnet_identifier} not found.")
@@ -53,15 +53,34 @@ def dump_and_upload(subnet_identifier: str, autovalidator_address: str, api_key:
     with zipfile.ZipFile(zip_filename, "w") as zipf:
         for file in output_files:
             zipf.write(file)
-    send_to_autovalidator(zip_filename, autovalidator_address, api_key)
+    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, subnet_identifier)
 
 
-def send_to_autovalidator(zip_filename, autovalidator_address, api_key):
+def make_signed_request(method, url, headers, files, wallet):
+    headers["Nonce"] = str(time.time())
+    headers["Hotkey"] = wallet.hotkey.ss58_address
+    file_content = files.get("file").read()
+    files.get("file").seek(0)
+    headers_str = json.dumps(headers, sort_keys=True)
+    data_to_sign = f"{method}{url}{headers_str}{file_content}".encode()
+    signature = wallet.hotkey.sign(
+        data_to_sign,
+    ).hex()
+    headers["Signature"] = signature
+
+    response = requests.request(method, url, headers=headers, files=files)
+    return response
+
+
+def send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, subnet_identifier):
     url = f"{autovalidator_address}/api/v1/files/"
-    headers = {"Authorization": f"Token {api_key}"}
     files = {"file": open(zip_filename, "rb")}
-
-    response = requests.post(url, headers=headers, files=files)
+    
+    headers = {
+        "Note": note,
+        "SubnetID": ",".join(subnet_identifier),
+    }
+    response = make_signed_request("POST", url, headers, files, wallet)
     if response.status_code == 201:
         print("File successfully uploaded and resource created.")
     elif response.status_code == 200:
