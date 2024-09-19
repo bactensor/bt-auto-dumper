@@ -5,7 +5,7 @@ import subprocess
 import time
 import zipfile
 
-import bittensor as bt
+import bittensor as bt # type: ignore
 import requests
 
 
@@ -29,16 +29,12 @@ def dump_and_upload(walletname, wallethotkey, subnet_identifier: str, autovalida
         "omron": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
     }
     wallet = bt.wallet(name=walletname, hotkey=wallethotkey)
-    commands = {}
-    for subnet_id, command in subnets.items():
-        if subnet_id == subnet_identifier:
-            commands[subnet_id] = command
-            break
+    if subnet_identifier in subnets:
+        commands = {subnet_identifier: subnets[subnet_identifier]}
 
     if not commands:
         print(f"Subnet identifier {subnet_identifier} not found.")
         return
-
     output_files = []
     for subnet_id, cmds in commands.items():
         for i, command in enumerate(cmds, start=1):
