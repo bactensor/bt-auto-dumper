@@ -5,7 +5,7 @@ import subprocess
 import time
 import zipfile
 
-import bittensor as bt # type: ignore
+import bittensor as bt  # type: ignore
 import requests
 
 
