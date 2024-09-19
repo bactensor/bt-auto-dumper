@@ -25,8 +25,8 @@ def main(apiver: str | None = None):
 
 def dump_and_upload(walletname, wallethotkey, subnet_identifier: str, autovalidator_address: str, note: str):
     subnets = {
-        "compute_horde":  ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
-        "omron":  ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
+        "compute_horde": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
+        "omron": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
     }
     wallet = bt.wallet(name=walletname, hotkey=wallethotkey)
     commands = {}
@@ -75,7 +75,7 @@ def make_signed_request(method, url, headers, files, wallet):
 def send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, subnet_identifier):
     url = f"{autovalidator_address}/api/v1/files/"
     files = {"file": open(zip_filename, "rb")}
-    
+
     headers = {
         "Note": note,
         "SubnetID": ",".join(subnet_identifier),
