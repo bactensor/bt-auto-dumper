@@ -1,6 +1,7 @@
 import argparse
 import json
 import pathlib
+import re
 import subprocess
 import time
 import zipfile
@@ -13,24 +14,33 @@ def main(apiver: str | None = None):
     apiver = apiver or pathlib.Path(__file__).parent.name
     parser = argparse.ArgumentParser(description=f"BT Auto Dumper CLI {apiver}")
     parser.add_argument("--note", help="Comment or note for the operation", type=str, default="")
-    parser.add_argument("--walletname", help="Wallet Name", type=str, required=True)
-    parser.add_argument("--wallethotkey", help="Wallet Hotkey", type=str, required=True)
     parser.add_argument("subnet_identifier", help="Subnet Identifier", type=str)
     parser.add_argument("autovalidator_address", help="AutoValidator Address", type=str)
 
     args = parser.parse_args()
 
-    dump_and_upload(args.walletname, args.wallethotkey, args.subnet_identifier, args.autovalidator_address, args.note)
+    dump_and_upload(args.subnet_identifier, args.autovalidator_address, args.note)
 
 
-def dump_and_upload(walletname, wallethotkey, subnet_identifier: str, autovalidator_address: str, note: str):
+def dump_and_upload(subnet_identifier: str, autovalidator_address: str, note: str):
+    """
+    Dump and upload the output of the commands to the AutoValidator
+    Args:
+        subnet_identifier: Subnet Identifier
+        autovalidator_address: AutoValidator Address
+        note: Comment or note for the operation
+    Example:
+        dump_and_upload("computehorde", "http://localhost:8000", "Test")
+    """
     subnets = {
-        "compute_horde": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
+        "computehorde": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
         "omron": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
     }
-    wallet = bt.wallet(name=walletname, hotkey=wallethotkey)
-    if subnet_identifier in subnets:
-        commands = {subnet_identifier: subnets[subnet_identifier]}
+
+    wallet = bt.wallet(name="validator", hotkey="validator-hotkey")
+    normalized_subnet_identifier = re.sub(r"[_\-.]", "", str.lower(subnet_identifier))
+    if normalized_subnet_identifier in subnets:
+        commands = {normalized_subnet_identifier: subnets[normalized_subnet_identifier]}
 
     if not commands:
         print(f"Subnet identifier {subnet_identifier} not found.")
@@ -45,14 +55,27 @@ def dump_and_upload(walletname, wallethotkey, subnet_identifier: str, autovalida
                 f.write(result.stdout)
             output_files.append(output_file)
 
-    zip_filename = "output.zip"
+    zip_filename = f"{normalized_subnet_identifier}-output.zip"
     with zipfile.ZipFile(zip_filename, "w") as zipf:
         for file in output_files:
             zipf.write(file)
-    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, subnet_identifier)
+    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, normalized_subnet_identifier)
 
 
-def make_signed_request(method, url, headers, files, wallet):
+def make_signed_request(method: str, url: str, headers: dict, files: dict, wallet: str):
+    """
+    Make a signed request to the AutoValidator
+    Args:
+        method: HTTP method
+        url: URL
+        headers: HTTP headers
+        files: Files to upload
+        wallet: Wallet object
+    Returns:
+        Response object
+    Example:
+        make_signed_request("POST", "http://localhost:8000/api/v1/files/", {"Note": "Test"}, {"file": open("test.zip", "rb")}, wallet)
+    """
     headers["Nonce"] = str(time.time())
     headers["Hotkey"] = wallet.hotkey.ss58_address
     file_content = files.get("file").read()
@@ -68,13 +91,26 @@ def make_signed_request(method, url, headers, files, wallet):
     return response
 
 
-def send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, subnet_identifier):
+def send_to_autovalidator(
+    zip_filename: str, wallet: bt.wallet, autovalidator_address: str, note: str, subnet_identifier: str
+):
+    """
+    Send the dump file to the AutoValidator
+    Args:
+        zip_filename: Zip file name
+        wallet: Wallet object
+        autovalidator_address: AutoValidator Address
+        note: Comment or note for the operation
+        subnet_identifier: Subnet Identifier
+    Example:
+        send_to_autovalidator("test.zip", wallet, "http://localhost:8000", "Test", "computehorde")
+    """
     url = f"{autovalidator_address}/api/v1/files/"
     files = {"file": open(zip_filename, "rb")}
 
     headers = {
         "Note": note,
-        "SubnetID": ",".join(subnet_identifier),
+        "SubnetID": subnet_identifier,
     }
     response = make_signed_request("POST", url, headers, files, wallet)
     if response.status_code == 201:
