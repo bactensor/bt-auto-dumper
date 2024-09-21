@@ -5,6 +5,7 @@ import re
 import subprocess
 import time
 import zipfile
+from io import BufferedReader
 
 import bittensor as bt  # type: ignore
 import requests
@@ -62,26 +63,36 @@ def dump_and_upload(subnet_identifier: str, autovalidator_address: str, note: st
     send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, normalized_subnet_identifier)
 
 
-def make_signed_request(method: str, url: str, headers: dict, files: dict, wallet: str):
+def make_signed_request(method: str, url: str, headers: dict, file_path: str, wallet: bt.wallet) -> requests.Response:
     """
     Make a signed request to the AutoValidator
     Args:
         method: HTTP method
         url: URL
         headers: HTTP headers
-        files: Files to upload
+        file_path: File path
         wallet: Wallet object
     Returns:
         Response object
     Example:
-        make_signed_request("POST", "http://localhost:8000/api/v1/files/", {"Note": "Test"}, {"file": open("test.zip", "rb")}, wallet)
+        make_signed_request(
+            "POST",
+            "http://localhost:8000/api/v1/files/",
+            {"Note": "Test"},
+            {"file": open("test.zip", "rb")},
+            wallet
+        )
     """
     headers["Nonce"] = str(time.time())
     headers["Hotkey"] = wallet.hotkey.ss58_address
-    file_content = files.get("file").read()
-    files.get("file").seek(0)
+    files = {"file": open(file_path, "rb")}
+    file = files.get("file")
+    file_content = b""
+    if isinstance(file, BufferedReader):
+        file_content = file.read()
+        file.seek(0)
     headers_str = json.dumps(headers, sort_keys=True)
-    data_to_sign = f"{method}{url}{headers_str}{file_content}".encode()
+    data_to_sign = f"{method}{url}{headers_str}{file_content.decode(errors="ignore")}".encode()
     signature = wallet.hotkey.sign(
         data_to_sign,
     ).hex()
@@ -106,13 +117,12 @@ def send_to_autovalidator(
         send_to_autovalidator("test.zip", wallet, "http://localhost:8000", "Test", "computehorde")
     """
     url = f"{autovalidator_address}/api/v1/files/"
-    files = {"file": open(zip_filename, "rb")}
 
     headers = {
         "Note": note,
         "SubnetID": subnet_identifier,
     }
-    response = make_signed_request("POST", url, headers, files, wallet)
+    response = make_signed_request("POST", url, headers, zip_filename, wallet)
     if response.status_code == 201:
         print("File successfully uploaded and resource created.")
     elif response.status_code == 200:
