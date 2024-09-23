@@ -1,5 +1,7 @@
 import argparse
+import configparser
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -9,18 +11,48 @@ from io import BufferedReader
 
 import bittensor as bt  # type: ignore
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def main(apiver: str | None = None):
     apiver = apiver or pathlib.Path(__file__).parent.name
     parser = argparse.ArgumentParser(description=f"BT Auto Dumper CLI {apiver}")
     parser.add_argument("--note", help="Comment or note for the operation", type=str, default="")
-    parser.add_argument("subnet_identifier", help="Subnet Identifier", type=str)
-    parser.add_argument("autovalidator_address", help="AutoValidator Address", type=str)
 
     args = parser.parse_args()
 
-    dump_and_upload(args.subnet_identifier, args.autovalidator_address, args.note)
+    # Get configuration directory from env variable.
+    config_base_dir = os.getenv("CONFIG_DIR")
+
+    # Check if the CONFIG_DIR environment variable is set
+    if not config_base_dir:
+        raise RuntimeError("CONFIG_DIR environment variable is not set.")
+
+    config_expanded_dir = os.path.expanduser(config_base_dir)
+
+    # Define the full path for the configuration file
+    config_path = os.path.join(config_expanded_dir, "config.ini")
+
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"{config_path} does not exist.")
+
+    # Read the configuration file
+    config = configparser.ConfigParser()
+    try:
+        config.read(config_path)
+    except Exception as e:
+        raise RuntimeError(f"Error reading configuration file: {config_path} \n Error:{e}")
+    print(config_path)
+    # Extract required values from the configuration
+    try:
+        autovalidator_address = config.get("subnet", "autovalidator_address")
+        subnet_identifier = config.get("subnet", "codename")
+    except Exception as e:
+        raise KeyError(f"Configuration error: Missing in the config file. \n Error:{e}")
+
+    dump_and_upload(subnet_identifier, autovalidator_address, args.note)
 
 
 def dump_and_upload(subnet_identifier: str, autovalidator_address: str, note: str):
@@ -92,7 +124,7 @@ def make_signed_request(method: str, url: str, headers: dict, file_path: str, wa
         file_content = file.read()
         file.seek(0)
     headers_str = json.dumps(headers, sort_keys=True)
-    data_to_sign = f"{method}{url}{headers_str}{file_content.decode(errors="ignore")}".encode()
+    data_to_sign = f"{method}{url}{headers_str}{file_content.decode(errors='ignore')}".encode()
     signature = wallet.hotkey.sign(
         data_to_sign,
     ).hex()
