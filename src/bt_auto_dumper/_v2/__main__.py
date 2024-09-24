@@ -171,7 +171,7 @@ def load_config(config_path: str) -> tuple[str, str]:
 
     """
 
-    # Check if the configration file exist
+    # Check if the configuration file exist
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"{config_path} does not exist.")
 
@@ -194,12 +194,12 @@ def load_config(config_path: str) -> tuple[str, str]:
 
 def update_confg(config_path: str, new_autovalidator_address: str, new_codename: str):
     """
-    Updates the configration with a new autovalidator address or codename.
+    Updates the configuration with a new autovalidator address or codename.
     If the config file doesn't exist, it creates a new one with the provided
     new_autovalidator_address and new_codename.
 
     Args:
-        config_path (str): The path to the configration file.
+        config_path (str): The path to the configuration file.
         new_autovalidator_address (str): The new autovalidator address to be set.
         new_codename (str): The new subnet identifier codename to be set.
 
