@@ -66,7 +66,9 @@ def dump_and_upload(subnet_identifier: str, subnet_realm: str, autovalidator_add
     send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, normalized_subnet_identifier, subnet_realm)
 
 
-def make_signed_request(method: str, url: str, headers: dict, file_path: str, wallet: bt.wallet, subnet_realm: str) -> requests.Response:
+def make_signed_request(
+    method: str, url: str, headers: dict, file_path: str, wallet: bt.wallet, subnet_realm: str
+) -> requests.Response:
     """
     Make a signed request to the AutoValidator
     Args:
@@ -107,8 +109,12 @@ def make_signed_request(method: str, url: str, headers: dict, file_path: str, wa
 
 
 def send_to_autovalidator(
-    zip_filename: str, wallet: bt.wallet, autovalidator_address: str, note: str,
-      subnet_identifier: str, subnet_realm: str
+    zip_filename: str,
+    wallet: bt.wallet,
+    autovalidator_address: str,
+    note: str,
+    subnet_identifier: str,
+    subnet_realm: str,
 ):
     """
     Send the dump file to the AutoValidator
