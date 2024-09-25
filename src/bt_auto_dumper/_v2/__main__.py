@@ -17,21 +17,23 @@ def main(apiver: str | None = None):
     parser.add_argument("--note", help="Comment or note for the operation", type=str, default="")
     parser.add_argument("subnet_identifier", help="Subnet Identifier", type=str)
     parser.add_argument("autovalidator_address", help="AutoValidator Address", type=str)
+    parser.add_argument("subnet_realm", help="Subnet Realm", type=str, choices=["testnet", "mainnet", "devnet"])
 
     args = parser.parse_args()
 
-    dump_and_upload(args.subnet_identifier, args.autovalidator_address, args.note)
+    dump_and_upload(args.subnet_identifier, args.subnet_realm, args.autovalidator_address, args.note)
 
 
-def dump_and_upload(subnet_identifier: str, autovalidator_address: str, note: str):
+def dump_and_upload(subnet_identifier: str, subnet_realm: str, autovalidator_address: str, note: str):
     """
     Dump and upload the output of the commands to the AutoValidator
     Args:
         subnet_identifier: Subnet Identifier
+        subnet_realm: Subnet Realm
         autovalidator_address: AutoValidator Address
         note: Comment or note for the operation
     Example:
-        dump_and_upload("computehorde", "http://localhost:8000", "Test")
+        dump_and_upload("computehorde", "mainnet", "http://localhost:8000", "Test")
     """
     subnets = {
         "computehorde": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
@@ -40,6 +42,7 @@ def dump_and_upload(subnet_identifier: str, autovalidator_address: str, note: st
 
     wallet = bt.wallet(name="validator", hotkey="validator-hotkey")
     normalized_subnet_identifier = re.sub(r"[_\-.]", "", str.lower(subnet_identifier))
+    commands = {}
     if normalized_subnet_identifier in subnets:
         commands = {normalized_subnet_identifier: subnets[normalized_subnet_identifier]}
 
@@ -60,10 +63,10 @@ def dump_and_upload(subnet_identifier: str, autovalidator_address: str, note: st
     with zipfile.ZipFile(zip_filename, "w") as zipf:
         for file in output_files:
             zipf.write(file)
-    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, normalized_subnet_identifier)
+    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, normalized_subnet_identifier, subnet_realm)
 
 
-def make_signed_request(method: str, url: str, headers: dict, file_path: str, wallet: bt.wallet) -> requests.Response:
+def make_signed_request(method: str, url: str, headers: dict, file_path: str, wallet: bt.wallet, subnet_realm: str) -> requests.Response:
     """
     Make a signed request to the AutoValidator
     Args:
@@ -85,6 +88,7 @@ def make_signed_request(method: str, url: str, headers: dict, file_path: str, wa
     """
     headers["Nonce"] = str(time.time())
     headers["Hotkey"] = wallet.hotkey.ss58_address
+    headers["Realm"] = subnet_realm
     files = {"file": open(file_path, "rb")}
     file = files.get("file")
     file_content = b""
@@ -92,7 +96,7 @@ def make_signed_request(method: str, url: str, headers: dict, file_path: str, wa
         file_content = file.read()
         file.seek(0)
     headers_str = json.dumps(headers, sort_keys=True)
-    data_to_sign = f"{method}{url}{headers_str}{file_content.decode(errors="ignore")}".encode()
+    data_to_sign = f"{method}{url}{headers_str}{file_content.decode(errors='ignore')}".encode()
     signature = wallet.hotkey.sign(
         data_to_sign,
     ).hex()
@@ -103,7 +107,8 @@ def make_signed_request(method: str, url: str, headers: dict, file_path: str, wa
 
 
 def send_to_autovalidator(
-    zip_filename: str, wallet: bt.wallet, autovalidator_address: str, note: str, subnet_identifier: str
+    zip_filename: str, wallet: bt.wallet, autovalidator_address: str, note: str,
+      subnet_identifier: str, subnet_realm: str
 ):
     """
     Send the dump file to the AutoValidator
@@ -122,7 +127,7 @@ def send_to_autovalidator(
         "Note": note,
         "SubnetID": subnet_identifier,
     }
-    response = make_signed_request("POST", url, headers, zip_filename, wallet)
+    response = make_signed_request("POST", url, headers, zip_filename, wallet, subnet_realm)
     if response.status_code == 201:
         print("File successfully uploaded and resource created.")
     elif response.status_code == 200:
