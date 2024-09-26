@@ -19,6 +19,7 @@ dynamic = [
     "version",
 ]
 dependencies = [
+    "python-dotenv",
     "requests",
     "bittensor>=7.4.0",
 ]
