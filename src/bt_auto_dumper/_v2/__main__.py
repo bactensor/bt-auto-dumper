@@ -22,7 +22,13 @@ def main(apiver: str | None = None):
     parser.add_argument("--note", help="Comment or note for the operation", type=str, default="")
     parser.add_argument("subnet_identifier", help="Subnet Identifier", type=str)
     parser.add_argument("autovalidator_address", help="AutoValidator Address", type=str)
-    parser.add_argument("subnet_realm", help="Subnet Realm", type=str, choices=["testnet", "mainnet", "devnet"], default="mainnet")
+    parser.add_argument(
+        "subnet_realm",
+        help="Subnet Realm",
+        type=str,
+        choices=["testnet", "mainnet", "devnet"],
+        default="mainnet",
+    )
     parser.add_argument("--set-autovalidator-address", help="Set a new autovalidator address", type=str)
     parser.add_argument("--set-codename", help="Set a new Subnet Identifier codename", type=str)
 
