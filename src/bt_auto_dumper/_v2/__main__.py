@@ -18,8 +18,9 @@ load_dotenv()
 CODENAME_MAP = {
     "computehorde": ["sn12", "12", "computehorde"],
     "omron": ["sn13", "13", "omron", "Omron"],
-    "textprompting": ["sn14", "14", "textprompting"]
+    "textprompting": ["sn14", "14", "textprompting"],
 }
+
 
 def normalize_codename(codename: str) -> str:
     codename_lower = codename.lower()
@@ -27,6 +28,7 @@ def normalize_codename(codename: str) -> str:
         if codename_lower in map(str.lower, aliases):
             return normalized
     return codename
+
 
 def main(apiver: str | None = None):
     apiver = apiver or pathlib.Path(__file__).parent.name
@@ -75,7 +77,9 @@ def main(apiver: str | None = None):
     dump_and_upload(normalized_subnet_identifier, args.subnet_realm, wallet, autovalidator_address, args.note)
 
 
-def dump_and_upload(subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str, note: str):
+def dump_and_upload(
+    subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str, note: str
+):
     """
     Dump and upload the output of the commands to the AutoValidator
     Args:
@@ -92,7 +96,6 @@ def dump_and_upload(subnet_identifier: str, subnet_realm: str, wallet: bt.wallet
         "omron": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
     }
 
-    
     commands = request_commands_to_server(subnet_identifier, subnet_realm, wallet, autovalidator_address)
 
     if not commands:
@@ -143,7 +146,7 @@ def make_signed_request(
     if file_path:
         files = {"file": open(file_path, "rb")}
         file = files.get("file")
-        
+
         if isinstance(file, BufferedReader):
             file_content = file.read()
             file.seek(0)
@@ -263,7 +266,10 @@ def update_confg(config_path: str, new_autovalidator_address: str, new_codename:
     except Exception as e:
         raise RuntimeError(f"Failed to write to the configuration file: {config_path}.\n Error: {e}")
 
-def request_commands_to_server(subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str) -> list:
+
+def request_commands_to_server(
+    subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str
+) -> list:
     """
     Request commands to the server
     Args:
@@ -291,6 +297,7 @@ def request_commands_to_server(subnet_identifier: str, subnet_realm: str, wallet
         print(f"Failed to get commands. Status code: {response.status_code}")
         print(response.text)
         return []
+
 
 if __name__ == "__main__":
     main()
