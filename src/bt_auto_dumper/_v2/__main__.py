@@ -15,13 +15,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+CODENAME_MAP = {
+    "computehorde": ["sn12", "12", "computehorde"],
+    "omron": ["sn13", "13", "omron", "Omron"],
+    "textprompting": ["sn14", "14", "textprompting"]
+}
+
+def normalize_codename(codename: str) -> str:
+    codename_lower = codename.lower()
+    for normalized, aliases in CODENAME_MAP.items():
+        if codename_lower in map(str.lower, aliases):
+            return normalized
+    return codename
 
 def main(apiver: str | None = None):
     apiver = apiver or pathlib.Path(__file__).parent.name
     parser = argparse.ArgumentParser(description=f"BT Auto Dumper CLI {apiver}")
     parser.add_argument("--note", help="Comment or note for the operation", type=str, default="")
-    parser.add_argument("subnet_identifier", help="Subnet Identifier", type=str)
-    parser.add_argument("autovalidator_address", help="AutoValidator Address", type=str)
+    parser.add_argument("subnet_identifier", help="Subnet Identifier", type=str, default="")
+    parser.add_argument("autovalidator_address", help="AutoValidator Address", type=str, default="")
     parser.add_argument(
         "subnet_realm",
         help="Subnet Realm",
@@ -35,7 +47,7 @@ def main(apiver: str | None = None):
     args = parser.parse_args()
 
     # Get configuration directory from env variable.
-    config_base_dir = os.getenv("CONFIG_DIR")
+    config_base_dir = os.getenv("CONFIG_DIR", default="")
 
     # Check if the CONFIG_DIR environment variable is set
     if not config_base_dir:
@@ -57,15 +69,19 @@ def main(apiver: str | None = None):
 
     if not (subnet_identifier := args.subnet_identifier) or not (autovalidator_address := args.autovalidator_address):
         autovalidator_address, subnet_identifier = load_config(config_path=config_path)
-    dump_and_upload(subnet_identifier, args.subnet_realm, autovalidator_address, args.note)
+    filtered_subnet_identifier = re.sub(r"[_\-.]", "", str.lower(subnet_identifier))
+    normalized_subnet_identifier = normalize_codename(filtered_subnet_identifier)
+    wallet = bt.wallet(name="validator", hotkey="validator-hotkey", path="~/.bittensor/wallets")
+    dump_and_upload(normalized_subnet_identifier, args.subnet_realm, wallet, autovalidator_address, args.note)
 
 
-def dump_and_upload(subnet_identifier: str, subnet_realm: str, autovalidator_address: str, note: str):
+def dump_and_upload(subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str, note: str):
     """
     Dump and upload the output of the commands to the AutoValidator
     Args:
         subnet_identifier: Subnet Identifier
         subnet_realm: Subnet Realm
+        wallet: Bittensor wallet object
         autovalidator_address: AutoValidator Address
         note: Comment or note for the operation
     Example:
@@ -76,30 +92,26 @@ def dump_and_upload(subnet_identifier: str, subnet_realm: str, autovalidator_add
         "omron": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
     }
 
-    wallet = bt.wallet(name="validator", hotkey="validator-hotkey")
-    normalized_subnet_identifier = re.sub(r"[_\-.]", "", str.lower(subnet_identifier))
-    commands = {}
-    if normalized_subnet_identifier in subnets:
-        commands = {normalized_subnet_identifier: subnets[normalized_subnet_identifier]}
+    
+    commands = request_commands_to_server(subnet_identifier, subnet_realm, wallet, autovalidator_address)
 
     if not commands:
         print(f"Subnet identifier {subnet_identifier} not found.")
         return
     output_files = []
-    for subnet_id, cmds in commands.items():
-        for i, command in enumerate(cmds, start=1):
-            output_file = f"{subnet_id}_{i}.txt"
-            with open(output_file, "w") as f:
-                f.write(f"Command: {command}\n")
-                result = subprocess.run(command, shell=True, capture_output=True, text=True)
-                f.write(result.stdout)
-            output_files.append(output_file)
+    for i, command in enumerate(commands, start=1):
+        output_file = f"{subnet_identifier}_{i}.txt"
+        with open(output_file, "w") as f:
+            f.write(f"Command: {command}\n")
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            f.write(result.stdout)
+        output_files.append(output_file)
 
-    zip_filename = f"{normalized_subnet_identifier}-output.zip"
+    zip_filename = f"{subnet_identifier}-output.zip"
     with zipfile.ZipFile(zip_filename, "w") as zipf:
         for file in output_files:
             zipf.write(file)
-    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, normalized_subnet_identifier, subnet_realm)
+    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, subnet_identifier, subnet_realm)
 
 
 def make_signed_request(
@@ -127,12 +139,14 @@ def make_signed_request(
     headers["Nonce"] = str(time.time())
     headers["Hotkey"] = wallet.hotkey.ss58_address
     headers["Realm"] = subnet_realm
-    files = {"file": open(file_path, "rb")}
-    file = files.get("file")
     file_content = b""
-    if isinstance(file, BufferedReader):
-        file_content = file.read()
-        file.seek(0)
+    if file_path:
+        files = {"file": open(file_path, "rb")}
+        file = files.get("file")
+        
+        if isinstance(file, BufferedReader):
+            file_content = file.read()
+            file.seek(0)
     headers_str = json.dumps(headers, sort_keys=True)
     data_to_sign = f"{method}{url}{headers_str}{file_content.decode(errors='ignore')}".encode()
     signature = wallet.hotkey.sign(
@@ -249,6 +263,34 @@ def update_confg(config_path: str, new_autovalidator_address: str, new_codename:
     except Exception as e:
         raise RuntimeError(f"Failed to write to the configuration file: {config_path}.\n Error: {e}")
 
+def request_commands_to_server(subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str) -> list:
+    """
+    Request commands to the server
+    Args:
+        subnet_identifier: Subnet Identifier
+        subnet_realm: Subnet Realm
+        wallet: Bittensor wallet object
+        autovalidator_address: AutoValidator Address
+    Returns:
+        list: List of commands
+    Example:
+        request_commands_to_server("computehorde", "mainnet", wallet, "http://localhost:8000")
+    """
+    url = f"{autovalidator_address}/api/v1/commands/"
+    headers = {
+        "Note": "",
+        "SubnetID": subnet_identifier,
+    }
+    response = make_signed_request("GET", url, headers, "", wallet, subnet_realm)
+    if response.status_code == 200:
+        data = response.json()
+        print(data)
+        print("Commands successfully retrieved.")
+        return data
+    else:
+        print(f"Failed to get commands. Status code: {response.status_code}")
+        print(response.text)
+        return []
 
 if __name__ == "__main__":
     main()
