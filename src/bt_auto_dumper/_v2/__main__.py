@@ -91,10 +91,6 @@ def dump_and_upload(
     Example:
         dump_and_upload("computehorde", "mainnet", "http://localhost:8000", "Test")
     """
-    subnets = {
-        "computehorde": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
-        "omron": ["echo 'Mainnet Command 1'", "echo 'Mainnet Command 2'"],
-    }
 
     commands = request_commands_to_server(subnet_identifier, subnet_realm, wallet, autovalidator_address)
 
