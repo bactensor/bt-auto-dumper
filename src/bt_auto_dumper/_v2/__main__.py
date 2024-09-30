@@ -15,20 +15,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-CODENAME_MAP = {
-    "computehorde": ["sn12", "12", "computehorde"],
-    "omron": ["sn13", "13", "omron", "Omron"],
-    "textprompting": ["sn14", "14", "textprompting"],
-}
-
-
-def normalize_codename(codename: str) -> str:
-    codename_lower = codename.lower()
-    for normalized, aliases in CODENAME_MAP.items():
-        if codename_lower in map(str.lower, aliases):
-            return normalized
-    return codename
-
 
 def main(apiver: str | None = None):
     apiver = apiver or pathlib.Path(__file__).parent.name
@@ -43,8 +29,8 @@ def main(apiver: str | None = None):
         choices=["testnet", "mainnet", "devnet"],
         default="mainnet",
     )
-    parser.add_argument("--set-autovalidator-address", help="Set a new autovalidator address", type=str)
-    parser.add_argument("--set-codename", help="Set a new Subnet Identifier codename", type=str)
+    parser.add_argument("--set-autovalidator-address", help="Set a new autovalidator address", type=str, default="")
+    parser.add_argument("--set-codename", help="Set a new Subnet Identifier codename", type=str, default="")
 
     args = parser.parse_args()
 
@@ -71,9 +57,13 @@ def main(apiver: str | None = None):
 
     if not (subnet_identifier := args.subnet_identifier) or not (autovalidator_address := args.autovalidator_address):
         autovalidator_address, subnet_identifier = load_config(config_path=config_path)
-    filtered_subnet_identifier = re.sub(r"[_\-.]", "", str.lower(subnet_identifier))
-    normalized_subnet_identifier = normalize_codename(filtered_subnet_identifier)
+
     wallet = bt.wallet(name="validator", hotkey="validator-hotkey", path="~/.bittensor/wallets")
+    normalized_subnet_identifier = get_normalized_codename_from_server(
+        args.subnet_identifier, "mainnet", wallet, args.autovalidator_address
+    )
+    if not normalized_subnet_identifier:
+        raise ValueError("Failed to normalize the codename.")
     dump_and_upload(normalized_subnet_identifier, args.subnet_realm, wallet, autovalidator_address, args.note)
 
 
@@ -92,7 +82,7 @@ def dump_and_upload(
         dump_and_upload("computehorde", "mainnet", "http://localhost:8000", "Test")
     """
 
-    commands = request_commands_to_server(subnet_identifier, subnet_realm, wallet, autovalidator_address)
+    commands = get_commands_from_server(subnet_identifier, subnet_realm, wallet, autovalidator_address)
 
     if not commands:
         print(f"Subnet identifier {subnet_identifier} not found.")
@@ -139,6 +129,7 @@ def make_signed_request(
     headers["Hotkey"] = wallet.hotkey.ss58_address
     headers["Realm"] = subnet_realm
     file_content = b""
+    files = None
     if file_path:
         files = {"file": open(file_path, "rb")}
         file = files.get("file")
@@ -263,7 +254,7 @@ def update_confg(config_path: str, new_autovalidator_address: str, new_codename:
         raise RuntimeError(f"Failed to write to the configuration file: {config_path}.\n Error: {e}")
 
 
-def request_commands_to_server(
+def get_commands_from_server(
     subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str
 ) -> list:
     """
@@ -293,6 +284,38 @@ def request_commands_to_server(
         print(f"Failed to get commands. Status code: {response.status_code}")
         print(response.text)
         return []
+
+
+def get_normalized_codename_from_server(
+    subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str
+) -> str:
+    """
+    Get the codename from the server
+    Args:
+        subnet_identifier: Subnet Identifier
+        subnet_realm: Subnet Realm
+        wallet: Bittensor wallet object
+        autovalidator_address: AutoValidator Address
+    Returns:
+        str: Codename
+    Example:
+        get_codename_from_server("12", "mainnet", wallet, "http://localhost:8000")
+    """
+    filtered_codename = re.sub(r"[_\-.]", "", str.lower(subnet_identifier))
+    url = f"{autovalidator_address}/api/v1/codename/"
+    headers = {
+        "Note": "",
+        "SubnetID": filtered_codename,
+    }
+    response = make_signed_request("GET", url, headers, "", wallet, subnet_realm)
+    if response.status_code == 200:
+        data = response.json()
+        print(f"Successfully retrieved codename map for {filtered_codename}.")
+        return data
+    else:
+        print(f"Failed to get codename map. Status code: {response.status_code}")
+        print(response.text)
+        return ""
 
 
 if __name__ == "__main__":
