@@ -60,7 +60,7 @@ def main(apiver: str | None = None):
 
     wallet = bt.wallet(name="validator", hotkey="validator-hotkey", path="~/.bittensor/wallets")
     normalized_subnet_identifier = get_normalized_codename_from_server(
-        args.subnet_identifier, "mainnet", wallet, args.autovalidator_address
+        subnet_identifier, args.subnet_realm, wallet, autovalidator_address
     )
     if not normalized_subnet_identifier:
         raise ValueError("Failed to normalize the codename.")
