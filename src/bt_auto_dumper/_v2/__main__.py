@@ -16,34 +16,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class ColoredFormatter(logging.Formatter):
-    """Custom logging formatter to add colors to log messages."""
-
-    COLORS = {
-        "DEBUG": "\033[94m",  # Blue
-        "INFO": "\033[92m",  # Green
-        "WARNING": "\033[93m",  # Yellow
-        "ERROR": "\033[91m",  # Red
-        "CRITICAL": "\033[1;91m",  # Bold Red
-    }
-    RESET = "\033[0m"
-
-    def format(self, record):
-        log_color = self.COLORS.get(record.levelname, self.RESET)
-        message = super().format(record)
-        return f"{log_color}{message}{self.RESET}"
-
-
-# Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Set custom formatter
-handler = logging.StreamHandler()
-handler.setFormatter(ColoredFormatter("%(asctime)s - %(levelname)s - %(message)s"))
-logger.addHandler(handler)
-
-
 def main(apiver: str | None = None):
     apiver = apiver or pathlib.Path(__file__).parent.name
     parser = argparse.ArgumentParser(description=f"BT Auto Dumper CLI {apiver}")
@@ -51,8 +23,8 @@ def main(apiver: str | None = None):
     parser.add_argument("--subnet_identifier", help="Subnet Identifier", type=str, default="")
     parser.add_argument("--autovalidator_address", help="AutoValidator Address", type=str, default="")
     parser.add_argument(
-        "--subnet_realm",
-        help="Subnet Realm",
+        "--chain",
+        help="Specify the chain to use",
         type=str,
         choices=["testnet", "mainnet", "devnet"],
         default="mainnet",
@@ -81,17 +53,17 @@ def main(apiver: str | None = None):
             new_autovalidator_address=args.set_autovalidator_address,
             new_codename=args.set_codename,
         )
-        logger.info(f"Configuration updated successfully at {config_path}")
+        logging.info(f"Configuration updated successfully at {config_path}")
 
     if not (subnet_identifier := args.subnet_identifier) or not (autovalidator_address := args.autovalidator_address):
         autovalidator_address, subnet_identifier = load_config(config_path=config_path)
 
     wallet = bt.wallet(name="validator", hotkey="validator-hotkey", path="~/.bittensor/wallets")
-    dump_and_upload(subnet_identifier, args.subnet_realm, wallet, autovalidator_address, args.note)
+    dump_and_upload(subnet_identifier, args.chain, wallet, autovalidator_address, args.note)
 
 
 def dump_and_upload(
-    subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str, note: str
+    subnet_identifier: str, subnet_chain: str, wallet: bt.wallet, autovalidator_address: str, note: str
 ):
     """
     Dump and upload the logs of the commands to the AutoValidator
@@ -99,14 +71,11 @@ def dump_and_upload(
         dump_and_upload("computehorde", "mainnet", "http://localhost:8000", "Test")
     """
 
-    # get normalized subnet identifier and commands from the central server
-    subnet_identifier, commands = get_commands_from_server(
-        subnet_identifier, subnet_realm, wallet, autovalidator_address
-    )
-    logger.info(f"Subnet dumper commands of {subnet_identifier} retrieved successfully. {commands}")
+    commands = get_commands_from_server(subnet_identifier, subnet_chain, wallet, autovalidator_address)
     if not commands:
-        logger.error(f"Subnet dumper commands of {subnet_identifier} not found.")
+        logging.error(f"Subnet dumper commands of {subnet_identifier} not found.")
         return
+    logging.info(f"Subnet dumper commands of {subnet_identifier} retrieved successfully. {commands}")
     output_files = []
     for i, command in enumerate(commands, start=1):
         output_file = f"{subnet_identifier}_{i}.txt"
@@ -120,11 +89,11 @@ def dump_and_upload(
     with zipfile.ZipFile(zip_filename, "w") as zipf:
         for file in output_files:
             zipf.write(file)
-    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, subnet_identifier, subnet_realm)
+    send_to_autovalidator(zip_filename, wallet, autovalidator_address, note, subnet_identifier, subnet_chain)
 
 
 def make_signed_request(
-    method: str, url: str, headers: dict, file_path: str, wallet: bt.wallet, subnet_realm: str
+    method: str, url: str, headers: dict, file_path: str, wallet: bt.wallet, subnet_chain: str
 ) -> requests.Response:
     """
     Example:
@@ -140,7 +109,7 @@ def make_signed_request(
     """
     headers["Nonce"] = str(time.time())
     headers["Hotkey"] = wallet.hotkey.ss58_address
-    headers["Realm"] = subnet_realm
+    headers["Realm"] = subnet_chain
     file_content = b""
     files = None
     if file_path:
@@ -167,7 +136,7 @@ def send_to_autovalidator(
     autovalidator_address: str,
     note: str,
     subnet_identifier: str,
-    subnet_realm: str,
+    subnet_chain: str,
 ):
     """
     Example:
@@ -180,14 +149,14 @@ def send_to_autovalidator(
         "Note": note,
         "SubnetID": subnet_identifier,
     }
-    response = make_signed_request("POST", url, headers, zip_filename, wallet, subnet_realm)
+    response = make_signed_request("POST", url, headers, zip_filename, wallet, subnet_chain)
     if response.status_code == 201:
-        logger.info("File successfully uploaded and resource created.")
+        logging.info("File successfully uploaded and resource created.")
     elif response.status_code == 200:
-        logger.warning("Request succeeded.")
+        logging.warning("Request succeeded.")
     else:
-        logger.error(f"Failed to upload file. Status code: {response.status_code}")
-        logger.error(response.text)
+        logging.error(f"Failed to upload file. Status code: {response.status_code}")
+        logging.error(response.text)
 
 
 def load_config(config_path: str) -> tuple[str, str]:
@@ -262,7 +231,7 @@ def update_confg(config_path: str, new_autovalidator_address: str, new_codename:
 
 
 def get_commands_from_server(
-    subnet_identifier: str, subnet_realm: str, wallet: bt.wallet, autovalidator_address: str
+    subnet_identifier: str, subnet_chain: str, wallet: bt.wallet, autovalidator_address: str
 ) -> list:
     """
     Example:
@@ -280,14 +249,13 @@ def get_commands_from_server(
         "Note": "",
         "SubnetID": subnet_identifier,
     }
-    response = make_signed_request("GET", url, headers, "", wallet, subnet_realm)
+    response = make_signed_request("GET", url, headers, "", wallet, subnet_chain)
     if response.status_code == 200:
         data = response.json()
-        logger.info("Commands successfully retrieved.")
         return data
     else:
-        logger.error(f"Failed to get commands. Status code: {response.status_code}")
-        logger.error(response.text)
+        logging.error(f"Failed to get commands. Status code: {response.status_code}")
+        logging.error(response.text)
         return []
 
 
