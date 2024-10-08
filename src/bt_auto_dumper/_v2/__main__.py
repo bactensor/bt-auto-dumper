@@ -35,7 +35,7 @@ def main(apiver: str | None = None):
     args = parser.parse_args()
 
     # Get configuration directory from env variable.
-    config_base_dir = os.getenv("CONFIG_DIR", default="")
+    config_base_dir = os.getenv("CONFIG_DIR", default="~/.config/bt-auto-dumper")
 
     # Check if the CONFIG_DIR environment variable is set
     if not config_base_dir:
@@ -56,9 +56,9 @@ def main(apiver: str | None = None):
         logging.info(f"Configuration updated successfully at {config_path}")
 
     if not (subnet_identifier := args.subnet_identifier) or not (autovalidator_address := args.autovalidator_address):
-        autovalidator_address, subnet_identifier = load_config(config_path=config_path)
-
-    wallet = bt.wallet(name="validator", hotkey="validator-hotkey", path="~/.bittensor/wallets")
+        autovalidator_address, subnet_identifier, __, __, __ = load_config(config_path=config_path)
+    __, __, wallet_name, wallet_hotkey, wallet_path = load_config(config_path=config_path)
+    wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey, path=wallet_path)
     dump_and_upload(subnet_identifier, args.chain, wallet, autovalidator_address, args.note)
 
 
@@ -103,7 +103,7 @@ def make_signed_request(
             {"Note": "Test"},
             "/path/test.zip",
             wallet,
-            "mainnet"
+            "mainnet",
         )
 
     """
@@ -159,7 +159,7 @@ def send_to_autovalidator(
         logging.error(response.text)
 
 
-def load_config(config_path: str) -> tuple[str, str]:
+def load_config(config_path: str) -> tuple[str, str, str, str, str]:
     """
     Load the configuration from the config file.
 
@@ -186,10 +186,19 @@ def load_config(config_path: str) -> tuple[str, str]:
     try:
         autovalidator_address = config.get("autovalidator", "autovalidator_address")
         subnet_identifier = config.get("autovalidator", "codename")
+        bittensor_wallet_name = config.get("autovalidator", "bittensor_wallet_name", fallback="validator")
+        bittensor_wallet_hotkey = config.get("autovalidator", "bittensor_wallet_hotkey", fallback="validator-hotkey")
+        bittensor_wallet_path = config.get("autovalidator", "bittensor_wallet_path", fallback="~/.bittensor/wallets")
     except Exception as e:
         raise KeyError(f"Configuration error: Missing in the config file. \n Error:{e}")
 
-    return autovalidator_address, subnet_identifier
+    return (
+        autovalidator_address,
+        subnet_identifier,
+        bittensor_wallet_name,
+        bittensor_wallet_hotkey,
+        bittensor_wallet_path,
+    )
 
 
 def update_confg(config_path: str, new_autovalidator_address: str, new_codename: str):
